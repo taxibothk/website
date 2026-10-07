@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RideBot HK · Hong Kong taxis, booked in chat</title>
+<meta name="description" content="Book a Hong Kong taxi on Telegram. See an estimated fare range with the tunnel fee before you book, then pay the meter. Single tunnel fee, no booking fee.">
+<meta name="theme-color" content="#c8102e">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23c8102e'/%3E%3Crect x='18' y='14' width='28' height='10' rx='3' fill='%23fff'/%3E%3Cpath d='M12 44V34l6-8h28l6 8v10z' fill='%23fff'/%3E%3Ccircle cx='21' cy='46' r='5' fill='%23c8102e' stroke='%23fff' stroke-width='3'/%3E%3Ccircle cx='43' cy='46' r='5' fill='%23c8102e' stroke='%23fff' stroke-width='3'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="skip" href="#main" data-t="skip">Skip to content</a>
+
+<header class="top">
+  <div class="wrap top-inner">
+    <a class="brand" href="#">
+      <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="currentColor"/><rect x="18" y="14" width="28" height="10" rx="3" fill="#fff"/><path d="M12 44V34l6-8h28l6 8v10z" fill="#fff"/><circle cx="21" cy="46" r="5" fill="currentColor" stroke="#fff" stroke-width="3"/><circle cx="43" cy="46" r="5" fill="currentColor" stroke="#fff" stroke-width="3"/></svg>
+      <span>RideBot <b>HK</b></span>
+    </a>
+    <nav class="nav" aria-label="Sections">
+      <a href="#estimate" data-t="nav_estimate">Fare estimate</a>
+      <a href="#fares" data-t="nav_fares">Fares</a>
+      <a href="#airport" data-t="nav_airport">Airport</a>
+      <a href="#drivers" data-t="nav_drivers">Drivers</a>
+      <a href="#faq" data-t="nav_faq">FAQ</a>
+    </nav>
+    <div class="langs" role="group" aria-label="Language">
+      <button type="button" data-lang="en">EN</button>
+      <button type="button" data-lang="zh-Hant">繁</button>
+      <button type="button" data-lang="zh-Hans">简</button>
+    </div>
+    <a class="btn btn-small rider-link" href="#" data-t="nav_book">Book</a>
+  </div>
+</header>
+
+<main id="main">
+  <!-- Hero -->
+  <section class="hero">
+    <div class="wrap hero-inner">
+      <div class="hero-copy">
+        <h1 data-t="hero_title">Hong Kong taxis, booked in chat</h1>
+        <p class="lead" data-t="hero_sub">Tell us where you're going on Telegram. See the fare range before you book, tunnel fee included. Then pay the meter.</p>
+        <div class="actions">
+          <a class="btn btn-primary rider-link" href="#">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M21.9 4.3 18.7 19.4c-.2 1-.9 1.3-1.7.8l-4.8-3.5-2.3 2.2c-.3.3-.5.5-1 .5l.3-4.9 8.9-8c.4-.3-.1-.5-.6-.2L6.5 13.2l-4.7-1.5c-1-.3-1-1 .2-1.5L20.5 3c.9-.3 1.6.2 1.4 1.3z"/></svg>
+            <span data-t="cta_book">Book on Telegram</span>
+          </a>
+          <a class="btn btn-ghost" href="#estimate" data-t="cta_estimate">Estimate a fare</a>
+        </div>
+        <ul class="points">
+          <li data-t="hero_p1">Official meter fares</li>
+          <li data-t="hero_p2">Single tunnel fee</li>
+          <li data-t="hero_p3">No booking fee</li>
+          <li data-t="hero_p4">Checked drivers</li>
+        </ul>
+      </div>
+      <div class="phone" aria-hidden="true">
+        <div class="phone-bar"><span class="avatar">🚕</span><span data-t="mock_title">RideBot HK</span></div>
+        <div class="chat">
+          <p class="bubble bot" data-t="mock_where"></p>
+          <p class="bubble me" data-t="mock_user1"></p>
+          <p class="bubble bot" data-t="mock_pickup"></p>
+          <p class="bubble me" data-t="mock_user2"></p>
+          <p class="bubble bot pre" data-t="mock_fare"></p>
+          <p class="bubble bot" data-t="mock_found"></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section class="section" id="how">
+    <div class="wrap">
+      <h2 data-t="how_title">How booking works</h2>
+      <ol class="steps">
+        <li><span class="num">1</span><h3 data-t="how_1t"></h3><p data-t="how_1"></p></li>
+        <li><span class="num">2</span><h3 data-t="how_2t"></h3><p data-t="how_2"></p></li>
+        <li><span class="num">3</span><h3 data-t="how_3t"></h3><p data-t="how_3"></p></li>
+        <li><span class="num">4</span><h3 data-t="how_4t"></h3><p data-t="how_4"></p></li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- Estimator -->
+  <section class="section tint" id="estimate">
+    <div class="wrap">
+      <h2 data-t="est_title">Fare estimator</h2>
+      <p class="sub" data-t="est_sub"></p>
+      <div class="est">
+        <form class="card est-form" id="est-form" autocomplete="off">
+          <div class="field" data-stop="from">
+            <div class="label-row">
+              <label for="from-input" data-t="est_from">From</label>
+              <button type="button" class="link" id="locate" data-t="est_locate">Use my location</button>
+            </div>
+            <div class="input"><span class="dot from"></span><input id="from-input" data-t-ph="est_from_ph"></div>
+            <ul class="suggest" role="listbox"></ul>
+          </div>
+          <div class="field" data-stop="to">
+            <div class="label-row"><label for="to-input" data-t="est_to">To</label></div>
+            <div class="input"><span class="dot to"></span><input id="to-input" data-t-ph="est_to_ph"></div>
+            <ul class="suggest" role="listbox"></ul>
+          </div>
+          <div class="row3">
+            <div class="field">
+              <label for="type" data-t="est_type">Taxi</label>
+              <select id="type">
+                <option value="urban" data-t="type_urban">Urban (red)</option>
+                <option value="nt" data-t="type_nt">New Territories (green)</option>
+                <option value="lantau" data-t="type_lantau">Lantau (blue)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="luggage" data-t="est_luggage">Luggage in the boot</label>
+              <select id="luggage"><option>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
+            </div>
+          </div>
+          <label class="check"><input type="checkbox" id="pet"> <span data-t="est_pet">Travelling with a pet</span></label>
+          <button class="btn btn-primary wide" type="submit" id="est-go" data-t="est_go">Estimate fare</button>
+          <p class="status" id="est-status" role="status"></p>
+        </form>
+        <div class="card est-result" id="est-result" aria-live="polite">
+          <div class="est-empty"><span class="ico">🧾</span><p data-t="est_placeholder"></p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Fares -->
+  <section class="section" id="fares">
+    <div class="wrap">
+      <h2 data-t="fares_title">Fares</h2>
+      <p class="sub" data-t="fares_sub"></p>
+      <div class="grid2">
+        <div class="card">
+          <div class="table-wrap"><table class="tbl" id="meter-table"></table></div>
+        </div>
+        <div class="card">
+          <h3 data-t="tunnel_title">Tunnel fees</h3>
+          <p class="small" data-t="tunnel_text"></p>
+          <div class="table-wrap"><table class="tbl" id="toll-table"></table></div>
+        </div>
+      </div>
+      <div class="card extras">
+        <h3 data-t="extras_title">Extras</h3>
+        <ul>
+          <li data-t="extra_luggage"></li><li data-t="extra_animal"></li>
+          <li data-t="extra_wheelchair"></li><li data-t="extra_tip"></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- Airport -->
+  <section class="section tint" id="airport">
+    <div class="wrap">
+      <h2 data-t="airport_title">Airport fares</h2>
+      <p class="sub" data-t="airport_sub"></p>
+      <div class="tabs" role="tablist" id="region-tabs">
+        <button role="tab" data-region="hk" data-t="region_hk">Hong Kong Island</button>
+        <button role="tab" data-region="kln" data-t="region_kln">Kowloon</button>
+        <button role="tab" data-region="nt" data-t="region_nt">New Territories &amp; Lantau</button>
+      </div>
+      <div class="card"><div class="table-wrap"><table class="tbl airport" id="airport-table"></table></div></div>
+      <p class="small muted" data-t="airport_note"></p>
+    </div>
+  </section>
+
+  <!-- Safety -->
+  <section class="section" id="safety">
+    <div class="wrap">
+      <h2 data-t="safety_title">Safe by design</h2>
+      <div class="grid4">
+        <div class="card feat"><span class="ico">🪪</span><h3 data-t="safety_1t"></h3><p data-t="safety_1"></p></div>
+        <div class="card feat"><span class="ico">🚖</span><h3 data-t="safety_2t"></h3><p data-t="safety_2"></p></div>
+        <div class="card feat"><span class="ico">🔐</span><h3 data-t="safety_3t"></h3><p data-t="safety_3"></p></div>
+        <div class="card feat"><span class="ico">💬</span><h3 data-t="safety_4t"></h3><p data-t="safety_4"></p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Drivers -->
+  <section class="section band" id="drivers">
+    <div class="wrap band-inner">
+      <div>
+        <h2 data-t="drivers_title">Drive with RideBot HK</h2>
+        <p class="lead" data-t="drivers_sub"></p>
+        <a class="btn btn-light driver-link" href="#" data-t="drivers_cta">Register on Telegram</a>
+      </div>
+      <ol class="band-steps">
+        <li data-t="drivers_1"></li><li data-t="drivers_2"></li><li data-t="drivers_3"></li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="section" id="faq">
+    <div class="wrap narrow">
+      <h2 data-t="faq_title">Questions</h2>
+      <details><summary data-t="q1"></summary><p data-t="a1"></p></details>
+      <details><summary data-t="q2"></summary><p data-t="a2"></p></details>
+      <details><summary data-t="q3"></summary><p data-t="a3"></p></details>
+      <details><summary data-t="q4"></summary><p data-t="a4"></p></details>
+      <details><summary data-t="q5"></summary><p data-t="a5"></p></details>
+      <details><summary data-t="q6"></summary><p data-t="a6"></p></details>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <p class="brand small-brand">RideBot <b>HK</b></p>
+    <p data-t="footer_disclaimer"></p>
+    <p class="muted" data-t="footer_sources"></p>
+  </div>
+</footer>
+
+<script src="data.js"></script>
+<script src="fares.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
