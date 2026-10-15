@@ -85,14 +85,14 @@
   const lang = ["en", "zh-Hant", "zh-Hans"].includes(P.get("lang")) ? P.get("lang") : "en";
   const mode = P.get("mode") || "dropoff";
   const TEXT = {
-    en: { dropoff: "Destination", pickup: "Pickup point", driver: "Your position", search: "Search a place or MTR station",
+    en: { dropoff: "Destination", stop: "Stop on the way", pickup: "Pickup point", driver: "Your position", search: "Search a place or MTR station",
           confirm: "Confirm this spot", move: "Move the map to put the pin on the exact spot", finding: "Finding you…",
           noloc: "Couldn't get your location. Move the map or search instead.", none: "No matches",
           unnamed: "Pinned spot", preview: "Preview: open this from the bot to send it." },
-    "zh-Hant": { dropoff: "目的地", pickup: "上車點", driver: "你的位置", search: "搜尋地點或港鐵站", confirm: "確認此位置",
+    "zh-Hant": { dropoff: "目的地", stop: "中途站", pickup: "上車點", driver: "你的位置", search: "搜尋地點或港鐵站", confirm: "確認此位置",
           move: "移動地圖，把圖釘放在準確位置", finding: "正在定位…", noloc: "未能取得你的位置，請移動地圖或搜尋。",
           none: "找不到相符地點", unnamed: "已標記的位置", preview: "預覽模式：請從機械人開啟以傳送。" },
-    "zh-Hans": { dropoff: "目的地", pickup: "上车点", driver: "你的位置", search: "搜索地点或港铁站", confirm: "确认此位置",
+    "zh-Hans": { dropoff: "目的地", stop: "中途站", pickup: "上车点", driver: "你的位置", search: "搜索地点或港铁站", confirm: "确认此位置",
           move: "移动地图，把图钉放在准确位置", finding: "正在定位…", noloc: "未能取得你的位置，请移动地图或搜索。",
           none: "找不到相符地点", unnamed: "已标记的位置", preview: "预览模式：请从机器人打开以发送。" },
   }[lang];
