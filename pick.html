@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Choose on map · RideBot HK</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root {
+    --bg: var(--tg-theme-bg-color, #ffffff); --text: var(--tg-theme-text-color, #16181d);
+    --hint: var(--tg-theme-hint-color, #6b7280); --field: var(--tg-theme-secondary-bg-color, #f2f2f5);
+    --accent: var(--tg-theme-button-color, #c8102e); --accent-text: var(--tg-theme-button-text-color, #fff);
+    --red: #c8102e;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang HK", "Noto Sans HK", sans-serif; }
+  #map { position: fixed; inset: 0; }
+  .top { position: fixed; top: 0; left: 0; right: 0; z-index: 1000; padding: 10px 12px 0; }
+  .search { display: flex; align-items: center; gap: 8px; background: var(--bg); border-radius: 12px; padding: 0 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.18); }
+  .search input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--text);
+    font: inherit; padding: 12px 0; }
+  .search .clear { border: 0; background: none; color: var(--hint); font-size: 18px; cursor: pointer; display: none; }
+  .search.has-text .clear { display: block; }
+  ul.suggest { list-style: none; margin: 6px 0 0; padding: 0; background: var(--bg); border-radius: 12px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.18); overflow: hidden; max-height: 50vh; overflow-y: auto; }
+  ul.suggest:empty { display: none; }
+  ul.suggest li { padding: 10px 14px; border-top: 1px solid var(--field); cursor: pointer; }
+  ul.suggest li:first-child { border-top: 0; }
+  ul.suggest .m { display: block; } ul.suggest .s { display: block; font-size: 13px; color: var(--hint); }
+  /* the pin stays in the middle; the map moves underneath it */
+  .pin { position: fixed; left: 50%; top: 50%; z-index: 900; width: 40px; height: 52px; margin: -52px 0 0 -20px;
+    pointer-events: none; transition: transform .15s ease; }
+  .pin.lift { transform: translateY(-10px); }
+  .pin svg { width: 100%; height: 100%; filter: drop-shadow(0 3px 3px rgba(0,0,0,.3)); }
+  .shadow { position: fixed; left: 50%; top: 50%; z-index: 890; width: 14px; height: 6px; margin: -3px 0 0 -7px;
+    border-radius: 50%; background: rgba(0,0,0,.25); pointer-events: none; }
+  .locate { position: fixed; right: 12px; bottom: 200px; z-index: 1000; width: 44px; height: 44px; border-radius: 50%;
+    border: 0; background: var(--bg); box-shadow: 0 2px 10px rgba(0,0,0,.2); font-size: 20px; cursor: pointer; }
+  .card { position: fixed; left: 0; right: 0; bottom: 0; z-index: 1000; background: var(--bg); padding: 14px 16px 18px;
+    border-radius: 16px 16px 0 0; box-shadow: 0 -2px 12px rgba(0,0,0,.15); }
+  .card .label { font-size: 12px; color: var(--hint); margin-bottom: 2px; }
+  .card .addr { font-weight: 600; min-height: 1.4em; }
+  .card .sub { font-size: 13px; color: var(--hint); min-height: 1.2em; }
+  .card button.confirm { display: none; width: 100%; margin-top: 12px; border: 0; border-radius: 12px; padding: 14px;
+    background: var(--accent); color: var(--accent-text); font: 600 16px/1 inherit; cursor: pointer; }
+  .status { font-size: 13px; color: var(--hint); margin-top: 6px; min-height: 1em; }
+  .leaflet-control-attribution { font-size: 10px; }
+  .leaflet-bottom.leaflet-right { bottom: 175px; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div class="top">
+  <div class="search" id="search">
+    <span>🔎</span>
+    <input id="q" autocomplete="off">
+    <button class="clear" id="clear" type="button" aria-label="Clear">×</button>
+  </div>
+  <ul class="suggest" id="suggest"></ul>
+</div>
+<div class="shadow"></div>
+<div class="pin" id="pin">
+  <svg viewBox="0 0 40 52" aria-hidden="true"><path d="M20 0C9 0 0 9 0 20c0 14.5 20 32 20 32s20-17.5 20-32C40 9 31 0 20 0z" fill="#c8102e"/><circle cx="20" cy="20" r="7" fill="#fff"/></svg>
+</div>
+<button class="locate" id="locate" type="button" aria-label="My location">📍</button>
+<div class="card">
+  <div class="label" id="title"></div>
+  <div class="addr" id="addr">…</div>
+  <div class="sub" id="sub"></div>
+  <div class="status" id="status"></div>
+  <button class="confirm" id="confirm" type="button"></button>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const tg = window.Telegram && Telegram.WebApp;
+  const inTelegram = !!(tg && tg.initData);
+  const P = new URLSearchParams(location.search);
+  const lang = ["en", "zh-Hant", "zh-Hans"].includes(P.get("lang")) ? P.get("lang") : "en";
+  const mode = P.get("mode") || "dropoff";
+  const TEXT = {
+    en: { dropoff: "Destination", pickup: "Pickup point", driver: "Your position", search: "Search a place or MTR station",
+          confirm: "Confirm this spot", move: "Move the map to put the pin on the exact spot", finding: "Finding you…",
+          noloc: "Couldn't get your location. Move the map or search instead.", none: "No matches",
+          unnamed: "Pinned spot", preview: "Preview: open this from the bot to send it." },
+    "zh-Hant": { dropoff: "目的地", pickup: "上車點", driver: "你的位置", search: "搜尋地點或港鐵站", confirm: "確認此位置",
+          move: "移動地圖，把圖釘放在準確位置", finding: "正在定位…", noloc: "未能取得你的位置，請移動地圖或搜尋。",
+          none: "找不到相符地點", unnamed: "已標記的位置", preview: "預覽模式：請從機械人開啟以傳送。" },
+    "zh-Hans": { dropoff: "目的地", pickup: "上车点", driver: "你的位置", search: "搜索地点或港铁站", confirm: "确认此位置",
+          move: "移动地图，把图钉放在准确位置", finding: "正在定位…", noloc: "未能取得你的位置，请移动地图或搜索。",
+          none: "找不到相符地点", unnamed: "已标记的位置", preview: "预览模式：请从机器人打开以发送。" },
+  }[lang];
+  const $ = id => document.getElementById(id);
+  const HK = ["hong kong", "香港"];
+
+  if (tg) { tg.ready(); tg.expand(); }
+  document.documentElement.lang = lang;
+  $("title").textContent = TEXT[mode] || TEXT.dropoff;
+  $("q").placeholder = TEXT.search;
+  $("confirm").textContent = TEXT.confirm;
+  $("sub").textContent = TEXT.move;
+
+  const lat0 = parseFloat(P.get("lat")) || 22.3193, lon0 = parseFloat(P.get("lon")) || 114.1694;
+  const map = L.map("map", { zoomControl: false, attributionControl: true }).setView([lat0, lon0], P.get("lat") ? 17 : 13);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
+
+  let label = "", seq = 0, timer;
+  const photonLang = lang === "en" ? "en" : "default";
+  async function photon(path, q) {
+    const url = new URL("https://photon.komoot.io/" + path);
+    Object.entries(q).forEach(([k, v]) => url.searchParams.set(k, v));
+    const r = await fetch(url);
+    return r.ok ? ((await r.json()).features || []) : [];
+  }
+  function nameOf(p) {
+    const street = [p.street, p.housenumber].filter(Boolean).join(" ");
+    const main = p.name || street || TEXT.unnamed;
+    const sub = [p.name ? street : null, p.district, p.city].filter(Boolean)
+      .filter(x => x !== main && !HK.some(w => x.toLowerCase().includes(w)));
+    return { main, sub: [...new Set(sub)].join(", ") };
+  }
+
+  // Address under the pin, updated when the map stops moving.
+  map.on("movestart", () => $("pin").classList.add("lift"));
+  map.on("moveend", () => {
+    $("pin").classList.remove("lift");
+    clearTimeout(timer);
+    const mine = ++seq, c = map.getCenter();
+    timer = setTimeout(async () => {
+      try {
+        const f = (await photon("reverse", { lat: c.lat, lon: c.lng, lang: photonLang }))[0];
+        if (mine !== seq) return;
+        const n = f ? nameOf(f.properties) : { main: TEXT.unnamed, sub: "" };
+        label = n.sub ? `${n.main}, ${n.sub}` : n.main;
+        $("addr").textContent = n.main;
+        $("sub").textContent = n.sub || `${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}`;
+      } catch {
+        label = "";
+        $("addr").textContent = `${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}`;
+      }
+    }, 350);
+  });
+  map.fire("moveend");
+
+  // Search box: jump the map to a place.
+  let sseq = 0, stimer;
+  $("q").addEventListener("input", () => {
+    const q = $("q").value.trim();
+    $("search").classList.toggle("has-text", !!q);
+    clearTimeout(stimer);
+    if (q.length < 2) { $("suggest").innerHTML = ""; return; }
+    stimer = setTimeout(async () => {
+      const mine = ++sseq;
+      let feats = await photon("api/", { q, limit: 20, lat: 22.3193, lon: 114.1694, lang: photonLang }).catch(() => []);
+      if (mine !== sseq) return;
+      feats = feats.filter(f => {
+        const p = f.properties, [lon, lat] = f.geometry.coordinates;
+        const mentions = ["state", "city", "district"].some(k => HK.some(w => (p[k] || "").toLowerCase().includes(w)));
+        return mentions || (lat > 22.15 && lat < 22.57 && lon > 113.82 && lon < 114.45);
+      }).slice(0, 6);
+      $("suggest").innerHTML = "";
+      if (!feats.length) { $("status").textContent = TEXT.none; return; }
+      $("status").textContent = "";
+      for (const f of feats) {
+        const n = nameOf(f.properties), li = document.createElement("li");
+        const m = document.createElement("span"); m.className = "m"; m.textContent = n.main;
+        const s = document.createElement("span"); s.className = "s"; s.textContent = n.sub;
+        li.append(m, s);
+        li.addEventListener("click", () => {
+          const [lon, lat] = f.geometry.coordinates;
+          $("suggest").innerHTML = ""; $("q").blur();
+          map.setView([lat, lon], 18);
+        });
+        $("suggest").append(li);
+      }
+    }, 300);
+  });
+  $("clear").addEventListener("click", () => {
+    $("q").value = ""; $("suggest").innerHTML = ""; $("search").classList.remove("has-text"); $("q").focus();
+  });
+
+  // My location: Telegram's location access if available, else the browser's.
+  $("locate").addEventListener("click", () => {
+    $("status").textContent = TEXT.finding;
+    const go = (lat, lon) => { $("status").textContent = ""; map.setView([lat, lon], 18); };
+    const fail = () => { $("status").textContent = TEXT.noloc; };
+    const lm = tg && tg.LocationManager;
+    if (inTelegram && lm && tg.isVersionAtLeast && tg.isVersionAtLeast("8.0")) {
+      lm.init(() => lm.isLocationAvailable ? lm.getLocation(l => l ? go(l.latitude, l.longitude) : fail()) : fail());
+    } else if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(p => go(p.coords.latitude, p.coords.longitude), fail,
+                                               { enableHighAccuracy: true, timeout: 10000 });
+    } else fail();
+  });
+
+  function send() {
+    const c = map.getCenter();
+    const data = JSON.stringify({ v: 1, pick: { lat: +c.lat.toFixed(6), lon: +c.lng.toFixed(6), label: label.slice(0, 80) } });
+    if (inTelegram) tg.sendData(data);           // back to the bot; the map closes
+    else $("status").textContent = TEXT.preview + " " + data;
+  }
+  if (inTelegram) {
+    tg.MainButton.setText(TEXT.confirm);
+    tg.MainButton.show();
+    tg.MainButton.onClick(send);
+  } else {
+    $("confirm").style.display = "block";
+    $("confirm").addEventListener("click", send);
+  }
+})();
+</script>
+</body>
+</html>
