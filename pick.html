@@ -79,7 +79,8 @@
 (() => {
   "use strict";
   const tg = window.Telegram && Telegram.WebApp;
-  const inTelegram = !!(tg && tg.initData);
+  // Opened from a bot menu button, Telegram gives no initData, but it always reports its platform.
+  const inTelegram = !!(tg && tg.platform && tg.platform !== "unknown");
   const P = new URLSearchParams(location.search);
   const lang = ["en", "zh-Hant", "zh-Hans"].includes(P.get("lang")) ? P.get("lang") : "en";
   const mode = P.get("mode") || "dropoff";
