@@ -113,6 +113,27 @@
     return inBox && !mentions(p, ["深圳", "shenzhen", "广东", "廣東", "guangdong"]);
   }
 
+  // The bot's own place search (government address + place data with OpenStreetMap), so the website finds the
+  // same places as the bots; OpenStreetMap alone if it's unavailable.
+  const SEARCH = "https://api.taxibothk.com/places/search";
+  async function sharedSearch(q) {
+    const url = new URL(SEARCH);
+    url.searchParams.set("q", q);
+    url.searchParams.set("lang", lang);
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("search failed");
+    return (await res.json()).results.map(x => ({ lat: x.lat, lon: x.lon, main: x.name, sub: x.details }));
+  }
+  async function osmSearch(q) {
+    const feats = (await photon("api/", { q, limit: 20, lat: BIAS.lat, lon: BIAS.lon,
+                                          lang: lang === "en" ? "en" : "default" })).filter(inHongKong);
+    const seen = new Set();
+    return feats.map(f => {
+      const l = placeLabel(f.properties), [lon, lat] = f.geometry.coordinates;
+      return { lat, lon, main: l.main, sub: l.sub };
+    }).filter(x => !seen.has(x.main + "|" + x.sub) && seen.add(x.main + "|" + x.sub));
+  }
+
   function placeLabel(p) {
     const street = [p.street, p.housenumber].filter(Boolean).join(" ");
     const main = p.name || street || "–";
@@ -143,30 +164,22 @@
       timer = setTimeout(async () => {
         const mine = ++seq;
         try {
-          let feats = await photon("api/", { q, limit: 20, lat: BIAS.lat, lon: BIAS.lon,
-                                             lang: lang === "en" ? "en" : "default" });
+          const found = (await sharedSearch(q).catch(() => osmSearch(q))).slice(0, 6);
           if (mine !== seq) return;
-          feats = feats.filter(inHongKong);
-          const seen = new Set();
-          feats = feats.filter(f => {
-            const l = placeLabel(f.properties), id = l.main + "|" + l.sub;
-            return !seen.has(id) && seen.add(id);
-          }).slice(0, 6);
           list.innerHTML = "";
-          for (const f of feats) {
-            const l = placeLabel(f.properties);
+          for (const l of found) {
             const li = document.createElement("li");
             li.setAttribute("role", "option");
             li.innerHTML = `<span class="s-main">${esc(l.main)}</span><span class="s-sub">${esc(l.sub)}</span>`;
-            const [lon, lat] = f.geometry.coordinates;
-            li.addEventListener("click", () => field.choose({ lat, lon, label: l.sub ? `${l.main}, ${l.sub}` : l.main }));
+            li.addEventListener("click", () => field.choose({ lat: l.lat, lon: l.lon,
+                                                             label: l.sub ? `${l.main}, ${l.sub}` : l.main }));
             list.append(li);
           }
-          status(feats.length ? "" : T("est_noresults"));
+          status(found.length ? "" : T("est_noresults"));
         } catch (e) {
           status(T("est_error"));
         }
-      }, 300);
+      }, 400);
     });
     input.addEventListener("blur", () => setTimeout(() => { list.innerHTML = ""; }, 200));
   }
