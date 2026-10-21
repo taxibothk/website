@@ -88,13 +88,16 @@
     en: { dropoff: "Destination", stop: "Stop on the way", pickup: "Pickup point", driver: "Your position", search: "Search a place or MTR station",
           confirm: "Confirm this spot", move: "Move the map to put the pin on the exact spot", finding: "Finding you…",
           noloc: "Couldn't get your location. Move the map or search instead.", none: "No matches",
-          unnamed: "Pinned spot", preview: "Preview: open this from the bot to send it." },
+          unnamed: "Pinned spot", preview: "Preview: open this from the bot to send it.",
+          failed: "Couldn't send it. Check your connection and tap Confirm again." },
     "zh-Hant": { dropoff: "目的地", stop: "中途站", pickup: "上車點", driver: "你的位置", search: "搜尋地點或港鐵站", confirm: "確認此位置",
           move: "移動地圖，把圖釘放在準確位置", finding: "正在定位…", noloc: "未能取得你的位置，請移動地圖或搜尋。",
-          none: "找不到相符地點", unnamed: "已標記的位置", preview: "預覽模式：請從機械人開啟以傳送。" },
+          none: "找不到相符地點", unnamed: "已標記的位置", preview: "預覽模式：請從機械人開啟以傳送。",
+          failed: "未能傳送，請檢查網絡後再按確認。" },
     "zh-Hans": { dropoff: "目的地", stop: "中途站", pickup: "上车点", driver: "你的位置", search: "搜索地点或港铁站", confirm: "确认此位置",
           move: "移动地图，把图钉放在准确位置", finding: "正在定位…", noloc: "未能取得你的位置，请移动地图或搜索。",
-          none: "找不到相符地点", unnamed: "已标记的位置", preview: "预览模式：请从机器人打开以发送。" },
+          none: "找不到相符地点", unnamed: "已标记的位置", preview: "预览模式：请从机器人打开以发送。",
+          failed: "未能发送，请检查网络后再按确认。" },
   }[lang];
   const $ = id => document.getElementById(id);
   const HK = ["hong kong", "香港"];
@@ -227,6 +230,7 @@
                                                { enableHighAccuracy: true, timeout: 10000 });
     } else fail();
   });
+  if (mode === "pickup" && !P.get("lat")) $("locate").click();  // a pickup is usually where you are now
 
   async function send() {
     await naming;  // don't send a spot with the previous spot's name
@@ -234,8 +238,22 @@
     const pick = { lat: +c.lat.toFixed(6), lon: +c.lng.toFixed(6), label: label.slice(0, 80) };
     if (chosen && chosen.names && metres(c, chosen) < 30) pick.names = chosen.names;
     const data = JSON.stringify({ v: 1, pick });
+    if (BACK && tg && tg.initData) return post(pick);   // opened from a button inside the chat
     if (inTelegram) tg.sendData(data);           // back to the bot; the map closes
     else $("status").textContent = TEXT.preview + " " + data;
+  }
+  // Opened from a button inside the chat (not the bottom menu), Telegram can't take the spot back to the chat
+  // itself, so it goes to the bot's server, signed with Telegram's initData; the bot then carries on the chat.
+  const BACK = P.get("back");
+  async function post(pick) {
+    tg.MainButton.showProgress && tg.MainButton.showProgress();
+    try {
+      const r = await fetch(BACK, { method: "POST", headers: { "Content-Type": "text/plain" },
+                                    body: JSON.stringify({ init: tg.initData, pick }) });
+      if (r.ok) return tg.close();
+    } catch (e) {}
+    tg.MainButton.hideProgress && tg.MainButton.hideProgress();
+    $("status").textContent = TEXT.failed;
   }
   if (inTelegram) {
     tg.MainButton.setText(TEXT.confirm);
