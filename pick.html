@@ -50,6 +50,8 @@
     background: var(--accent); color: var(--accent-text); font: 600 16px/1 inherit; cursor: pointer; }
   .status { font-size: 13px; color: var(--hint); margin-top: 6px; min-height: 1em; }
   .leaflet-control-attribution { font-size: 10px; }
+  .spot { width: 28px; height: 28px; border-radius: 50%; background: #fff; box-shadow: 0 1px 5px rgba(0,0,0,.35);
+    display: flex; align-items: center; justify-content: center; font-size: 15px; }
   .leaflet-bottom.leaflet-right { bottom: 175px; }
 </style>
 </head>
@@ -90,15 +92,21 @@
           confirm: "Confirm this spot", move: "Move the map to put the pin on the exact spot", finding: "Finding you…",
           noloc: "Couldn't get your location. Move the map or search instead.", none: "No matches",
           unnamed: "Pinned spot", preview: "Preview: open this from the bot to send it.",
-          failed: "Couldn't send it. Check your connection and tap Confirm again." },
+          failed: "Couldn't send it. Check your connection and tap Confirm again.",
+          rough: "Your phone only gave a rough location (up to {m} out). Turn on Precise Location for Telegram in your phone's settings, or move the pin yourself.",
+          taxi: "Taxi stand", door: "Entrance", spots: "tap 🚕 a taxi stand or 🚪 an entrance" },
     "zh-Hant": { dropoff: "目的地", stop: "中途站", pickup: "上車點", driver: "你的位置", search: "搜尋地點或港鐵站", confirm: "確認此位置",
           move: "移動地圖，把圖釘放在準確位置", finding: "正在定位…", noloc: "未能取得你的位置，請移動地圖或搜尋。",
           none: "找不到相符地點", unnamed: "已標記的位置", preview: "預覽模式：請從機械人開啟以傳送。",
-          failed: "未能傳送，請檢查網絡後再按確認。" },
+          failed: "未能傳送，請檢查網絡後再按確認。",
+          rough: "手機只提供了大概位置（誤差可達 {m}）。請在手機設定開啟 Telegram 的「精確位置」，或自行移動圖釘。",
+          taxi: "的士站", door: "入口", spots: "可按 🚕 的士站或 🚪 入口" },
     "zh-Hans": { dropoff: "目的地", stop: "中途站", pickup: "上车点", driver: "你的位置", search: "搜索地点或港铁站", confirm: "确认此位置",
           move: "移动地图，把图钉放在准确位置", finding: "正在定位…", noloc: "未能取得你的位置，请移动地图或搜索。",
           none: "找不到相符地点", unnamed: "已标记的位置", preview: "预览模式：请从机器人打开以发送。",
-          failed: "未能发送，请检查网络后再按确认。" },
+          failed: "未能发送，请检查网络后再按确认。",
+          rough: "手机只提供了大概位置（误差可达 {m}）。请在手机设置开启 Telegram 的「精确位置」，或自行移动图钉。",
+          taxi: "的士站", door: "入口", spots: "可按 🚕 的士站或 🚪 入口" },
   }[lang];
   const $ = id => document.getElementById(id);
   const HK = ["hong kong", "香港"];
@@ -184,6 +192,45 @@
   });
   map.fire("moveend");
 
+  // Taxi stands 🚕 and main entrances 🚪 near the pin (OpenStreetMap, through our server): a building can have
+  // several doors, and the rider can tap the one they'll wait at.
+  const SPOTS = SEARCH.replace(/\/search$/, "/spots");
+  const asked = new Set(), shown = new Set();
+  let stimerSpots;
+  function placeSpot(s) {
+    const k = s.lat + "," + s.lon;
+    if (shown.has(k) || shown.size > 300) return;
+    shown.add(k);
+    const icon = L.divIcon({ className: "", iconSize: [28, 28], iconAnchor: [14, 14],
+                             html: `<div class="spot">${s.kind === "taxi" ? "🚕" : "🚪"}</div>` });
+    L.marker([s.lat, s.lon], { icon, keyboard: false }).addTo(map).on("click", () => {
+      const what = s.kind === "taxi" ? TEXT.taxi : TEXT.door;
+      const near = chosen ? chosen.main : $("addr").textContent;  // the building it belongs to
+      const named = s.name ? `${what} · ${s.name}` : what;
+      chosen = { lat: s.lat, lon: s.lon, main: `${s.kind === "taxi" ? "🚕" : "🚪"} ${named}`,
+                 sub: s.name || !near || near === "…" ? "" : near };
+      map.setView([s.lat, s.lon], Math.max(map.getZoom(), 18));
+      map.fire("moveend");
+    });
+  }
+  if (mode !== "driver") map.on("moveend", () => {
+    clearTimeout(stimerSpots);
+    if (map.getZoom() < 16) return;
+    stimerSpots = setTimeout(async () => {
+      const c = map.getCenter(), key = c.lat.toFixed(3) + "," + c.lng.toFixed(3);
+      if (asked.has(key)) return;
+      asked.add(key);
+      try {
+        const url = new URL(SPOTS);
+        url.searchParams.set("lat", c.lat.toFixed(3)); url.searchParams.set("lon", c.lng.toFixed(3));
+        const r = await fetch(url);
+        const found = r.ok ? (await r.json()).spots || [] : [];
+        found.forEach(placeSpot);
+        if (found.length) $("title").textContent = `${TEXT[mode] || TEXT.dropoff} · ${TEXT.spots}`;
+      } catch { asked.delete(key); }  // try again next time the map stops here
+    }, 500);
+  });
+
   // Search box: jump the map to a place.
   let sseq = 0, stimer;
   $("q").addEventListener("input", () => {
@@ -218,17 +265,41 @@
     $("q").value = ""; $("suggest").innerHTML = ""; $("search").classList.remove("has-text"); $("q").focus();
   });
 
-  // My location: Telegram's location access if available, else the browser's.
+  // My location: Telegram's location access if available, else the browser's. A phone may give only a rough
+  // position ("Precise Location" off, or no GPS fix yet) that can be kilometres out: show how far out it may be
+  // as a circle, say so, and keep taking better fixes for a few seconds, until the user moves the map.
+  let ring = null, watch = null, best = Infinity;
+  const ROUGH_M = 150;
+  const stopWatch = () => { if (watch !== null) navigator.geolocation.clearWatch(watch); watch = null; };
+  map.on("dragstart", () => { stopWatch(); best = 0; });  // they're placing the pin themselves now
+  function go(lat, lon, acc) {
+    if (!(acc < best)) return;  // only ever move to a better fix
+    best = acc || 1;
+    if (ring) ring.remove();
+    ring = acc > 30 ? L.circle([lat, lon], { radius: acc, color: "#2481cc", weight: 1, fillOpacity: .08,
+                                             interactive: false }).addTo(map) : null;
+    const m = acc >= 1000 ? (acc / 1000).toFixed(1) + " km" : Math.round(acc) + " m";
+    $("status").textContent = acc > ROUGH_M ? TEXT.rough.replace("{m}", m) : "";
+    map.setView([lat, lon], acc > 1000 ? 14 : acc > ROUGH_M ? 16 : 18);
+  }
   $("locate").addEventListener("click", () => {
     $("status").textContent = TEXT.finding;
-    const go = (lat, lon) => { $("status").textContent = ""; map.setView([lat, lon], 18); };
-    const fail = () => { $("status").textContent = TEXT.noloc; };
+    stopWatch(); best = Infinity;
+    const fail = () => { if (best === Infinity) $("status").textContent = TEXT.noloc; };
     const lm = tg && tg.LocationManager;
     if (inTelegram && lm && tg.isVersionAtLeast && tg.isVersionAtLeast("8.0")) {
-      lm.init(() => lm.isLocationAvailable ? lm.getLocation(l => l ? go(l.latitude, l.longitude) : fail()) : fail());
+      const ask = () => lm.getLocation(l => l ? go(l.latitude, l.longitude, l.horizontal_accuracy || 0) : fail());
+      lm.init(() => {
+        if (!lm.isLocationAvailable) return fail();
+        ask();
+        setTimeout(() => { if (best > ROUGH_M) ask(); }, 4000);  // a GPS fix often comes a moment later
+      });
     } else if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(p => go(p.coords.latitude, p.coords.longitude), fail,
-                                               { enableHighAccuracy: true, timeout: 10000 });
+      watch = navigator.geolocation.watchPosition(p => {
+        go(p.coords.latitude, p.coords.longitude, p.coords.accuracy || 0);
+        if (best <= 30) stopWatch();
+      }, () => { fail(); stopWatch(); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+      setTimeout(stopWatch, 20000);
     } else fail();
   });
   if (mode === "pickup" && !P.get("lat")) $("locate").click();  // a pickup is usually where you are now
