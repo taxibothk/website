@@ -46,6 +46,8 @@
   .card .label { font-size: 12px; color: var(--hint); margin-bottom: 2px; }
   .card .addr { font-weight: 600; min-height: 1.4em; }
   .card .sub { font-size: 13px; color: var(--hint); min-height: 1.2em; }
+  .card .near { display: none; margin-top: 8px; border: 1px solid var(--accent); color: var(--accent); background: none;
+    border-radius: 10px; padding: 8px 10px; font: 600 14px/1.3 inherit; text-align: left; width: 100%; cursor: pointer; }
   .card button.confirm { display: none; width: 100%; margin-top: 12px; border: 0; border-radius: 12px; padding: 14px;
     background: var(--accent); color: var(--accent-text); font: 600 16px/1 inherit; cursor: pointer; }
   .status { font-size: 13px; color: var(--hint); margin-top: 6px; min-height: 1em; }
@@ -74,6 +76,7 @@
   <div class="label" id="title"></div>
   <div class="addr" id="addr">…</div>
   <div class="sub" id="sub"></div>
+  <button class="near" id="near" type="button"></button>
   <div class="status" id="status"></div>
   <button class="confirm" id="confirm" type="button"></button>
 </div>
@@ -94,19 +97,22 @@
           unnamed: "Pinned spot", preview: "Preview: open this from the bot to send it.",
           failed: "Couldn't send it. Check your connection and tap Confirm again.",
           rough: "Your phone only gave a rough location (up to {m} out). Turn on Precise Location for Telegram in your phone's settings, or move the pin yourself.",
-          taxi: "Taxi stand", door: "Entrance", spots: "tap 🚕 a taxi stand or 🚪 an entrance" },
+          taxi: "Taxi stand", door: "Entrance", pickup: "Taxi pick-up point", dropoff: "Taxi drop-off point",
+          star: "Recommended pickup point", spots: "tap ⭐ 🚕 🚖 🚪 to use that spot", use: "Use the nearby {what}: {name} ({m} m)" },
     "zh-Hant": { dropoff: "目的地", stop: "中途站", pickup: "上車點", driver: "你的位置", search: "搜尋地點或港鐵站", confirm: "確認此位置",
           move: "移動地圖，把圖釘放在準確位置", finding: "正在定位…", noloc: "未能取得你的位置，請移動地圖或搜尋。",
           none: "找不到相符地點", unnamed: "已標記的位置", preview: "預覽模式：請從機械人開啟以傳送。",
           failed: "未能傳送，請檢查網絡後再按確認。",
           rough: "手機只提供了大概位置（誤差可達 {m}）。請在手機設定開啟 Telegram 的「精確位置」，或自行移動圖釘。",
-          taxi: "的士站", door: "入口", spots: "可按 🚕 的士站或 🚪 入口" },
+          taxi: "的士站", door: "入口", pickup: "的士上落客點", dropoff: "的士落客點", star: "建議上車點",
+          spots: "可按 ⭐ 🚕 🚖 🚪 使用該位置", use: "使用附近的{what}：{name}（{m} 米）" },
     "zh-Hans": { dropoff: "目的地", stop: "中途站", pickup: "上车点", driver: "你的位置", search: "搜索地点或港铁站", confirm: "确认此位置",
           move: "移动地图，把图钉放在准确位置", finding: "正在定位…", noloc: "未能取得你的位置，请移动地图或搜索。",
           none: "找不到相符地点", unnamed: "已标记的位置", preview: "预览模式：请从机器人打开以发送。",
           failed: "未能发送，请检查网络后再按确认。",
           rough: "手机只提供了大概位置（误差可达 {m}）。请在手机设置开启 Telegram 的「精确位置」，或自行移动图钉。",
-          taxi: "的士站", door: "入口", spots: "可按 🚕 的士站或 🚪 入口" },
+          taxi: "的士站", door: "入口", pickup: "的士上落客点", dropoff: "的士落客点", star: "建议上车点",
+          spots: "可按 ⭐ 🚕 🚖 🚪 使用该位置", use: "使用附近的{what}：{name}（{m} 米）" },
   }[lang];
   const $ = id => document.getElementById(id);
   const HK = ["hong kong", "香港"];
@@ -192,28 +198,51 @@
   });
   map.fire("moveend");
 
-  // Taxi stands 🚕 and main entrances 🚪 near the pin (OpenStreetMap, through our server): a building can have
-  // several doors, and the rider can tap the one they'll wait at.
+  // Spots near the pin, from our server: ⭐ pickup points we placed, 🚕 official taxi stands and 🚖 taxi pick-up
+  // points (Transport Department), 🚪 main entrances (OpenStreetMap). A building can have several doors: the rider
+  // taps the one they'll wait at, and the nearest official one within 60 m is offered under the address.
   const SPOTS = SEARCH.replace(/\/search$/, "/spots");
-  const asked = new Set(), shown = new Set();
+  const ICON = { star: "⭐", taxi: "🚕", pickup: "🚖", dropoff: "🚖", entrance: "🚪" };
+  const WHAT = { star: TEXT.star, taxi: TEXT.taxi, pickup: TEXT.pickup, dropoff: TEXT.dropoff, entrance: TEXT.door };
+  const OFFER = ["star", "taxi", "pickup"].concat(mode === "pickup" ? [] : ["dropoff"]);
+  const asked = new Set(), shown = new Map();
   let stimerSpots;
+  const spotName = s => (lang === "en" && s.name_en) || s.name || s.name_en || "";
+  const spotNote = s => (lang === "en" && s.note_en) || s.note || "";
+  function useSpot(s) {
+    const near = chosen ? chosen.main : $("addr").textContent;  // the building it belongs to
+    const name = spotName(s), note = spotNote(s);
+    chosen = { lat: s.lat, lon: s.lon, main: `${ICON[s.kind]} ${name || WHAT[s.kind]}`,
+               sub: [name ? (note || WHAT[s.kind]) : "", !name && near && near !== "…" ? near : ""]
+                 .filter(Boolean).join(" · ") };
+    map.setView([s.lat, s.lon], Math.max(map.getZoom(), 18));
+    map.fire("moveend");
+  }
   function placeSpot(s) {
     const k = s.lat + "," + s.lon;
-    if (shown.has(k) || shown.size > 300) return;
-    shown.add(k);
+    if (shown.has(k) || shown.size > 400 || (s.kind === "dropoff" && mode === "pickup")) return;  // not for pickups
+    shown.set(k, s);
     const icon = L.divIcon({ className: "", iconSize: [28, 28], iconAnchor: [14, 14],
-                             html: `<div class="spot">${s.kind === "taxi" ? "🚕" : "🚪"}</div>` });
-    L.marker([s.lat, s.lon], { icon, keyboard: false }).addTo(map).on("click", () => {
-      const what = s.kind === "taxi" ? TEXT.taxi : TEXT.door;
-      const near = chosen ? chosen.main : $("addr").textContent;  // the building it belongs to
-      const named = s.name ? `${what} · ${s.name}` : what;
-      chosen = { lat: s.lat, lon: s.lon, main: `${s.kind === "taxi" ? "🚕" : "🚪"} ${named}`,
-                 sub: s.name || !near || near === "…" ? "" : near };
-      map.setView([s.lat, s.lon], Math.max(map.getZoom(), 18));
-      map.fire("moveend");
-    });
+                             html: `<div class="spot">${ICON[s.kind] || "📍"}</div>` });
+    L.marker([s.lat, s.lon], { icon, keyboard: false, zIndexOffset: s.kind === "star" ? 500 : 0 }).addTo(map)
+      .on("click", () => useSpot(s));
+  }
+  function offerNearest() {  // "Use the nearby taxi stand: Russell Street (40 m)"
+    const c = map.getCenter();
+    let best = null, bestM = 60;
+    for (const s of shown.values()) {
+      const m = metres(c, s);
+      if (OFFER.includes(s.kind) && spotName(s) && m < bestM && m > 8) { best = s; bestM = m; }
+    }
+    $("near").style.display = best ? "block" : "none";
+    if (best) {
+      $("near").textContent = `${ICON[best.kind]} ` + TEXT.use.replace("{what}", WHAT[best.kind])
+        .replace("{name}", spotName(best)).replace("{m}", Math.round(bestM));
+      $("near").onclick = () => useSpot(best);
+    }
   }
   if (mode !== "driver") map.on("moveend", () => {
+    offerNearest();
     clearTimeout(stimerSpots);
     if (map.getZoom() < 16) return;
     stimerSpots = setTimeout(async () => {
@@ -227,6 +256,7 @@
         const found = r.ok ? (await r.json()).spots || [] : [];
         found.forEach(placeSpot);
         if (found.length) $("title").textContent = `${TEXT[mode] || TEXT.dropoff} · ${TEXT.spots}`;
+        offerNearest();
       } catch { asked.delete(key); }  // try again next time the map stops here
     }, 500);
   });
