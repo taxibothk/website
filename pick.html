@@ -46,6 +46,7 @@
   .card .label { font-size: 12px; color: var(--hint); margin-bottom: 2px; }
   .card .addr { font-weight: 600; min-height: 1.4em; }
   .card .sub { font-size: 13px; color: var(--hint); min-height: 1.2em; }
+  .card .kerb { display: none; margin-top: 6px; color: #d93025; font-size: 14px; font-weight: 600; }
   .card .near { display: none; margin-top: 8px; border: 1px solid var(--accent); color: var(--accent); background: none;
     border-radius: 10px; padding: 8px 10px; font: 600 14px/1.3 inherit; text-align: left; width: 100%; cursor: pointer; }
   .card button.confirm { display: none; width: 100%; margin-top: 12px; border: 0; border-radius: 12px; padding: 14px;
@@ -76,6 +77,7 @@
   <div class="label" id="title"></div>
   <div class="addr" id="addr">…</div>
   <div class="sub" id="sub"></div>
+  <div class="kerb" id="kerb"></div>
   <button class="near" id="near" type="button"></button>
   <div class="status" id="status"></div>
   <button class="confirm" id="confirm" type="button"></button>
@@ -98,21 +100,24 @@
           failed: "Couldn't send it. Check your connection and tap Confirm again.",
           rough: "Your phone only gave a rough location (up to {m} out). Turn on Precise Location for Telegram in your phone's settings, or move the pin yourself.",
           taxi: "Taxi stand", door: "Entrance", pickup: "Taxi pick-up point", dropoff: "Taxi drop-off point",
-          star: "Recommended pickup point", spots: "tap ⭐ 🚕 🚖 🚪 to use that spot", use: "Use the nearby {what}: {name} ({m} m)" },
+          star: "Recommended pickup point", spots: "tap ⭐ 🚕 🚖 🚪 to use that spot", use: "Use the nearby {what}: {name} ({m} m)",
+          kerb: "🚫 Taxis can't stop here: {rule}" },
     "zh-Hant": { dropoff: "目的地", stop: "中途站", pickup: "上車點", driver: "你的位置", search: "搜尋地點或港鐵站", confirm: "確認此位置",
           move: "移動地圖，把圖釘放在準確位置", finding: "正在定位…", noloc: "未能取得你的位置，請移動地圖或搜尋。",
           none: "找不到相符地點", unnamed: "已標記的位置", preview: "預覽模式：請從機械人開啟以傳送。",
           failed: "未能傳送，請檢查網絡後再按確認。",
           rough: "手機只提供了大概位置（誤差可達 {m}）。請在手機設定開啟 Telegram 的「精確位置」，或自行移動圖釘。",
           taxi: "的士站", door: "入口", pickup: "的士上落客點", dropoff: "的士落客點", star: "建議上車點",
-          spots: "可按 ⭐ 🚕 🚖 🚪 使用該位置", use: "使用附近的{what}：{name}（{m} 米）" },
+          spots: "可按 ⭐ 🚕 🚖 🚪 使用該位置", use: "使用附近的{what}：{name}（{m} 米）",
+          kerb: "🚫 的士不能在此停車：{rule}" },
     "zh-Hans": { dropoff: "目的地", stop: "中途站", pickup: "上车点", driver: "你的位置", search: "搜索地点或港铁站", confirm: "确认此位置",
           move: "移动地图，把图钉放在准确位置", finding: "正在定位…", noloc: "未能取得你的位置，请移动地图或搜索。",
           none: "找不到相符地点", unnamed: "已标记的位置", preview: "预览模式：请从机器人打开以发送。",
           failed: "未能发送，请检查网络后再按确认。",
           rough: "手机只提供了大概位置（误差可达 {m}）。请在手机设置开启 Telegram 的「精确位置」，或自行移动图钉。",
           taxi: "的士站", door: "入口", pickup: "的士上落客点", dropoff: "的士落客点", star: "建议上车点",
-          spots: "可按 ⭐ 🚕 🚖 🚪 使用该位置", use: "使用附近的{what}：{name}（{m} 米）" },
+          spots: "可按 ⭐ 🚕 🚖 🚪 使用该位置", use: "使用附近的{what}：{name}（{m} 米）",
+          kerb: "🚫 的士不能在此停车：{rule}" },
   }[lang];
   const $ = id => document.getElementById(id);
   const HK = ["hong kong", "香港"];
@@ -227,9 +232,9 @@
     L.marker([s.lat, s.lon], { icon, keyboard: false, zIndexOffset: s.kind === "star" ? 500 : 0 }).addTo(map)
       .on("click", () => useSpot(s));
   }
-  function offerNearest() {  // "Use the nearby taxi stand: Russell Street (40 m)"
+  function offerNearest(within) {  // "Use the nearby taxi stand: Russell Street (40 m)"
     const c = map.getCenter();
-    let best = null, bestM = 60;
+    let best = null, bestM = within || 60;
     for (const s of shown.values()) {
       const m = metres(c, s);
       if (OFFER.includes(s.kind) && spotName(s) && m < bestM && m > 8) { best = s; bestM = m; }
@@ -242,7 +247,7 @@
     }
   }
   if (mode !== "driver") map.on("moveend", () => {
-    offerNearest();
+    hints();
     clearTimeout(stimerSpots);
     if (map.getZoom() < 16) return;
     stimerSpots = setTimeout(async () => {
@@ -256,9 +261,72 @@
         const found = r.ok ? (await r.json()).spots || [] : [];
         found.forEach(placeSpot);
         if (found.length) $("title").textContent = `${TEXT[mode] || TEXT.dropoff} · ${TEXT.spots}`;
-        offerNearest();
+        hints();
       } catch { asked.delete(key); }  // try again next time the map stops here
     }, 500);
+  });
+
+  // Kerbs where taxis may not stop (Transport Department: no-stopping restrictions, bus lanes, pedestrian zones),
+  // drawn as red lines when zoomed in. A pin on one that's in force now gets a warning and a wider offer of the
+  // nearest taxi stand or pick-up point, unless an official stand or point (where taxis may stop) is right there.
+  const KERBS = SEARCH.replace(/\/search$/, "/kerbs");
+  const kerbLayer = L.layerGroup(), kerbAsked = new Set(), kerbLines = new Map();
+  let ktimer;
+  function toLine(c, pts) {  // metres from the map centre to a polyline
+    const k = 111320 * Math.cos(c.lat * Math.PI / 180);
+    const xy = pts.map(p => [(p[1] - c.lng) * k, (p[0] - c.lat) * 111320]);
+    let best = Infinity;
+    for (let i = 0; i < Math.max(1, xy.length - 1); i++) {
+      const [ax, ay] = xy[i], [bx, by] = xy[i + 1] || xy[i], dx = bx - ax, dy = by - ay;
+      const t = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / ((dx * dx + dy * dy) || 1e-9)));
+      best = Math.min(best, Math.hypot(ax + t * dx, ay + t * dy));
+    }
+    return best;
+  }
+  function kerbHere() {
+    const c = map.getCenter();
+    for (const s of shown.values()) {  // an official stand, pick-up point or ⭐ spot right here: taxis may stop
+      if (["star", "taxi", "pickup"].concat(mode === "pickup" ? [] : ["dropoff"]).includes(s.kind) && metres(c, s) <= 20)
+        return null;
+    }
+    let best = null, bestM = 10;
+    for (const k of kerbLines.values()) {
+      if (!k.active) continue;
+      const m = toLine(c, k.pts);
+      if (m <= bestM) { best = k; bestM = m; }
+    }
+    return best;
+  }
+  function hints() {
+    const k = mode === "driver" ? null : kerbHere();
+    $("kerb").style.display = k ? "block" : "none";
+    if (k) $("kerb").textContent = TEXT.kerb.replace("{rule}", lang === "en" ? k.text_en : k.text);
+    offerNearest(k ? 150 : 60);
+  }
+  map.on("zoomend", () => { map.getZoom() >= 17 ? kerbLayer.addTo(map) : kerbLayer.remove(); });
+  if (mode !== "driver") map.on("moveend", () => {
+    clearTimeout(ktimer);
+    if (map.getZoom() < 16) return;
+    ktimer = setTimeout(async () => {
+      const c = map.getCenter(), key = c.lat.toFixed(3) + "," + c.lng.toFixed(3);
+      if (kerbAsked.has(key)) return;
+      kerbAsked.add(key);
+      try {
+        const url = new URL(KERBS);
+        url.searchParams.set("lat", c.lat.toFixed(4)); url.searchParams.set("lon", c.lng.toFixed(4));
+        url.searchParams.set("mode", mode);
+        const r = await fetch(url);
+        for (const k of (r.ok ? (await r.json()).lines || [] : [])) {
+          const id = k.pts[0].join() + k.text;
+          if (kerbLines.has(id) || kerbLines.size > 2000) continue;
+          kerbLines.set(id, k);
+          L.polyline(k.pts, { color: k.active ? "#d93025" : "#999", weight: 4, opacity: k.active ? .7 : .5,
+                              dashArray: k.active ? null : "4 6", interactive: false }).addTo(kerbLayer);
+        }
+        if (map.getZoom() >= 17) kerbLayer.addTo(map);
+        hints();
+      } catch { kerbAsked.delete(key); }
+    }, 600);
   });
 
   // Search box: jump the map to a place.
