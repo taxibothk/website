@@ -396,6 +396,9 @@
     $("q").value = ""; $("suggest").innerHTML = ""; $("search").classList.remove("has-text"); $("q").focus();
   });
 
+  // Telegram's init() does nothing (and never calls back) once it has been done: only call it the first time.
+  function withLocationManager(lm, then) { lm.isInited ? then() : lm.init(then); }
+
   // My location: Telegram's location access if available, else the browser's. A phone may give only a rough
   // position ("Precise Location" off, or no GPS fix yet) that can be kilometres out: show how far out it may be
   // as a circle, say so, and keep taking better fixes for a few seconds, until the user moves the map.
@@ -418,21 +421,30 @@
     $("status").textContent = TEXT.finding;
     stopWatch(); best = Infinity;
     const fail = () => { if (best === Infinity) $("status").textContent = TEXT.noloc; };
-    const lm = tg && tg.LocationManager;
-    if (inTelegram && lm && tg.isVersionAtLeast && tg.isVersionAtLeast("8.0")) {
-      const ask = () => lm.getLocation(l => l ? go(l.latitude, l.longitude, l.horizontal_accuracy || 0) : fail());
-      lm.init(() => {
-        if (!lm.isLocationAvailable) return fail();
-        ask();
-        setTimeout(() => { if (best > ROUGH_M) ask(); }, 4000);  // a GPS fix often comes a moment later
-      });
-    } else if (navigator.geolocation) {
+    const browser = () => {  // the phone's location through the page itself
+      if (!navigator.geolocation) return fail();
+      stopWatch();
       watch = navigator.geolocation.watchPosition(p => {
         go(p.coords.latitude, p.coords.longitude, p.coords.accuracy || 0);
         if (best <= 30) stopWatch();
       }, () => { fail(); stopWatch(); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
       setTimeout(stopWatch, 20000);
-    } else fail();
+    };
+    const lm = tg && tg.LocationManager;
+    if (inTelegram && lm && tg.isVersionAtLeast && tg.isVersionAtLeast("8.0")) {
+      // Telegram's location (asks the user the first time). If it doesn't answer, the page asks the phone instead.
+      let answered = false;
+      const quiet = setTimeout(() => { if (!answered) browser(); }, 8000);
+      const ask = () => lm.getLocation(l => {
+        answered = true; clearTimeout(quiet);
+        l ? go(l.latitude, l.longitude, l.horizontal_accuracy || 0) : fail();
+      });
+      withLocationManager(lm, () => {
+        if (!lm.isLocationAvailable) { clearTimeout(quiet); return browser(); }
+        ask();
+        setTimeout(() => { if (best > ROUGH_M) ask(); }, 4000);  // a GPS fix often comes a moment later
+      });
+    } else browser();
   });
   // Start where the phone is. For a pickup, ask for the location (it's usually where you are now); for anything
   // else, only if the phone already lets this page have it, so no permission question pops up.
@@ -440,7 +452,7 @@
     const lm = inTelegram && tg.LocationManager;
     if (mode === "pickup") $("locate").click();
     else if (lm && tg.isVersionAtLeast && tg.isVersionAtLeast("8.0")) {
-      lm.init(() => { if (lm.isLocationAvailable && lm.isAccessGranted) $("locate").click(); });
+      withLocationManager(lm, () => { if (lm.isLocationAvailable && lm.isAccessGranted) $("locate").click(); });
     } else if (navigator.permissions && navigator.geolocation) {
       navigator.permissions.query({ name: "geolocation" })
         .then(p => { if (p.state === "granted") $("locate").click(); }).catch(() => {});
