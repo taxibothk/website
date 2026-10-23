@@ -420,6 +420,8 @@
   $("locate").addEventListener("click", () => {
     $("status").textContent = TEXT.finding;
     stopWatch(); best = Infinity;
+    const test = (P.get("here") || "").split(",").map(Number);
+    if (test.length === 2 && test.every(isFinite)) return go(test[0], test[1], 5);  // a test account's spot
     const fail = () => { if (best === Infinity) $("status").textContent = TEXT.noloc; };
     const browser = () => {  // the phone's location through the page itself
       if (!navigator.geolocation) return fail();
@@ -450,7 +452,7 @@
   // else, only if the phone already lets this page have it, so no permission question pops up.
   if (!P.get("lat")) {
     const lm = inTelegram && tg.LocationManager;
-    if (mode === "pickup") $("locate").click();
+    if (mode === "pickup" || P.get("here")) $("locate").click();
     else if (lm && tg.isVersionAtLeast && tg.isVersionAtLeast("8.0")) {
       withLocationManager(lm, () => { if (lm.isLocationAvailable && lm.isAccessGranted) $("locate").click(); });
     } else if (navigator.permissions && navigator.geolocation) {
