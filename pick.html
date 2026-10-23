@@ -130,7 +130,7 @@
   $("sub").textContent = TEXT.move;
 
   const lat0 = parseFloat(P.get("lat")) || 22.3193, lon0 = parseFloat(P.get("lon")) || 114.1694;
-  const map = L.map("map", { zoomControl: false, attributionControl: true }).setView([lat0, lon0], P.get("lat") ? 17 : 13);
+  const map = L.map("map", { zoomControl: false, attributionControl: true }).setView([lat0, lon0], P.get("lat") ? 18 : 17);  // street level
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
 
@@ -378,7 +378,7 @@
                                              interactive: false }).addTo(map) : null;
     const m = acc >= 1000 ? (acc / 1000).toFixed(1) + " km" : Math.round(acc) + " m";
     $("status").textContent = acc > ROUGH_M ? TEXT.rough.replace("{m}", m) : "";
-    map.setView([lat, lon], acc > 1000 ? 14 : acc > ROUGH_M ? 16 : 18);
+    map.setView([lat, lon], acc > 1000 ? 15 : acc > ROUGH_M ? 17 : 18);
   }
   $("locate").addEventListener("click", () => {
     $("status").textContent = TEXT.finding;
@@ -400,7 +400,18 @@
       setTimeout(stopWatch, 20000);
     } else fail();
   });
-  if (mode === "pickup" && !P.get("lat")) $("locate").click();  // a pickup is usually where you are now
+  // Start where the phone is. For a pickup, ask for the location (it's usually where you are now); for anything
+  // else, only if the phone already lets this page have it, so no permission question pops up.
+  if (!P.get("lat")) {
+    const lm = inTelegram && tg.LocationManager;
+    if (mode === "pickup") $("locate").click();
+    else if (lm && tg.isVersionAtLeast && tg.isVersionAtLeast("8.0")) {
+      lm.init(() => { if (lm.isLocationAvailable && lm.isAccessGranted) $("locate").click(); });
+    } else if (navigator.permissions && navigator.geolocation) {
+      navigator.permissions.query({ name: "geolocation" })
+        .then(p => { if (p.state === "granted") $("locate").click(); }).catch(() => {});
+    }
+  }
 
   async function send() {
     await naming;  // don't send a spot with the previous spot's name
