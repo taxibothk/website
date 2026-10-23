@@ -31,6 +31,7 @@
   ul.suggest:empty { display: none; }
   ul.suggest li { padding: 10px 14px; border-top: 1px solid var(--field); cursor: pointer; }
   ul.suggest li:first-child { border-top: 0; }
+  ul.suggest li.on { background: var(--field); }  /* the result the pin is on now */
   ul.suggest .m { display: block; } ul.suggest .s { display: block; font-size: 13px; color: var(--hint); }
   /* the pin stays in the middle; the map moves underneath it */
   .pin { position: fixed; left: 50%; top: 50%; z-index: 900; width: 40px; height: 52px; margin: -52px 0 0 -20px;
@@ -329,8 +330,15 @@
     }, 600);
   });
 
-  // Search box: jump the map to a place.
+  // Search box: the pin jumps to the first result as soon as there are results (the list stays open to pick
+  // another); Enter takes the one the pin is on.
   let sseq = 0, stimer;
+  function goTo(n, done) {
+    chosen = n;
+    map.setView([n.lat, n.lon], 18, { animate: false });
+    map.fire("moveend");  // name it now, even if the map didn't need to move
+    if (done) { $("suggest").innerHTML = ""; $("q").blur(); }
+  }
   $("q").addEventListener("input", () => {
     const q = $("q").value.trim();
     $("search").classList.toggle("has-text", !!q);
@@ -344,20 +352,22 @@
       $("suggest").innerHTML = "";
       if (!found.length) { $("status").textContent = TEXT.none; return; }
       $("status").textContent = "";
-      for (const n of found) {
+      found.forEach((n, i) => {
         const li = document.createElement("li");
         const m = document.createElement("span"); m.className = "m"; m.textContent = n.main;
         const s = document.createElement("span"); s.className = "s"; s.textContent = n.sub;
         li.append(m, s);
-        li.addEventListener("click", () => {
-          $("suggest").innerHTML = ""; $("q").blur();
-          chosen = n;
-          map.setView([n.lat, n.lon], 18, { animate: false });
-          map.fire("moveend");  // name it now, even if the map didn't need to move
-        });
+        if (i === 0) li.className = "on";
+        li.addEventListener("click", () => goTo(n, true));
         $("suggest").append(li);
-      }
+      });
+      goTo(found[0], false);  // the pin on the first result straight away
     }, 400);
+  });
+  $("q").addEventListener("keydown", ev => {
+    if (ev.key !== "Enter") return;
+    ev.preventDefault();
+    if (chosen && $("suggest").children.length) goTo(chosen, true);
   });
   $("clear").addEventListener("click", () => {
     $("q").value = ""; $("suggest").innerHTML = ""; $("search").classList.remove("has-text"); $("q").focus();
