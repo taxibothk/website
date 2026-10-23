@@ -27,7 +27,7 @@
   .search .clear { border: 0; background: none; color: var(--hint); font-size: 18px; cursor: pointer; display: none; }
   .search.has-text .clear { display: block; }
   ul.suggest { list-style: none; margin: 6px 0 0; padding: 0; background: var(--bg); border-radius: 12px;
-    box-shadow: 0 6px 20px rgba(0,0,0,.18); overflow: hidden; max-height: 40vh; overflow-y: auto; }  /* the pin, mid-map, stays in view */
+    box-shadow: 0 6px 20px rgba(0,0,0,.18); overflow: hidden; max-height: 32vh; overflow-y: auto; }  /* the pin, mid-map, stays in view */
   ul.suggest:empty { display: none; }
   ul.suggest li { padding: 10px 14px; border-top: 1px solid var(--field); cursor: pointer; }
   ul.suggest li:first-child { border-top: 0; }
@@ -102,7 +102,7 @@
           unnamed: "Pinned spot", preview: "Preview: open this from the bot to send it.",
           failed: "Couldn't send it. Check your connection and tap Confirm again.",
           rough: "Your phone only gave a rough location (up to {m} out). Turn on Precise Location for Telegram in your phone's settings, or move the pin yourself.",
-          taxi: "Taxi stand", door: "Entrance", pickup: "Taxi pick-up point", dropoff: "Taxi drop-off point",
+          taxi: "Taxi stand", door: "Entrance", spotPickup: "Taxi pick-up point", spotDropoff: "Taxi drop-off point",
           star: "Recommended pickup point", spots: "tap ⭐ 🚕 🚖 🚪 to use that spot", use: "Use the nearby {what}: {name} ({m} m)",
           kerb: "🚫 Taxis can't stop here: {rule}" },
     "zh-Hant": { dropoff: "目的地", stop: "中途站", pickup: "上車點", driver: "你的位置", search: "搜尋地點或港鐵站", confirm: "確認此位置",
@@ -110,7 +110,7 @@
           none: "找不到相符地點", unnamed: "已標記的位置", preview: "預覽模式：請從機械人開啟以傳送。",
           failed: "未能傳送，請檢查網絡後再按確認。",
           rough: "手機只提供了大概位置（誤差可達 {m}）。請在手機設定開啟 Telegram 的「精確位置」，或自行移動圖釘。",
-          taxi: "的士站", door: "入口", pickup: "的士上落客點", dropoff: "的士落客點", star: "建議上車點",
+          taxi: "的士站", door: "入口", spotPickup: "的士上落客點", spotDropoff: "的士落客點", star: "建議上車點",
           spots: "可按 ⭐ 🚕 🚖 🚪 使用該位置", use: "使用附近的{what}：{name}（{m} 米）",
           kerb: "🚫 的士不能在此停車：{rule}" },
     "zh-Hans": { dropoff: "目的地", stop: "中途站", pickup: "上车点", driver: "你的位置", search: "搜索地点或港铁站", confirm: "确认此位置",
@@ -118,7 +118,7 @@
           none: "找不到相符地点", unnamed: "已标记的位置", preview: "预览模式：请从机器人打开以发送。",
           failed: "未能发送，请检查网络后再按确认。",
           rough: "手机只提供了大概位置（误差可达 {m}）。请在手机设置开启 Telegram 的「精确位置」，或自行移动图钉。",
-          taxi: "的士站", door: "入口", pickup: "的士上落客点", dropoff: "的士落客点", star: "建议上车点",
+          taxi: "的士站", door: "入口", spotPickup: "的士上落客点", spotDropoff: "的士落客点", star: "建议上车点",
           spots: "可按 ⭐ 🚕 🚖 🚪 使用该位置", use: "使用附近的{what}：{name}（{m} 米）",
           kerb: "🚫 的士不能在此停车：{rule}" },
   }[lang];
@@ -139,6 +139,15 @@
 
   let label = "", seq = 0, timer, naming = Promise.resolve();
   let chosen = null;  // a place picked from search: its name stays while the pin is still on it
+  // Opened with no spot and no location yet, the map is somewhere arbitrary (central Kowloon): nothing to confirm
+  // until a real spot is chosen (a search result, the phone's location, a stand tapped, or the map moved by hand).
+  let placed = !!P.get("lat");
+  function setPlaced() {
+    if (placed) return;
+    placed = true;
+    if (inTelegram) tg.MainButton.show(); else $("confirm").style.display = "block";
+  }
+  map.on("dragstart", setPlaced);
   const photonLang = lang === "en" ? "en" : "default";
   // The bot's own place search (government address + place data with OpenStreetMap); OpenStreetMap alone if it's down.
   const SEARCH = P.get("search") || "https://api.taxibothk.com/places/search";
@@ -180,6 +189,12 @@
     $("pin").classList.remove("lift");
     clearTimeout(timer);
     const mine = ++seq, c = map.getCenter();
+    if (!placed) {  // nothing chosen yet: say how to choose, don't name the arbitrary starting spot
+      label = "";
+      $("addr").textContent = "🔎 " + TEXT.search;
+      $("sub").textContent = TEXT.move;
+      return;
+    }
     if (chosen && metres(c, chosen) < 30) {  // still on the place picked from search: keep its name
       label = chosen.sub ? `${chosen.main}, ${chosen.sub.replace(/ · /g, ", ")}` : chosen.main;
       $("addr").textContent = chosen.main;
@@ -211,13 +226,14 @@
   // taps the one they'll wait at, and the nearest official one within 60 m is offered under the address.
   const SPOTS = SEARCH.replace(/\/search$/, "/spots");
   const ICON = { star: "⭐", taxi: "🚕", pickup: "🚖", dropoff: "🚖", entrance: "🚪" };
-  const WHAT = { star: TEXT.star, taxi: TEXT.taxi, pickup: TEXT.pickup, dropoff: TEXT.dropoff, entrance: TEXT.door };
+  const WHAT = { star: TEXT.star, taxi: TEXT.taxi, pickup: TEXT.spotPickup, dropoff: TEXT.spotDropoff, entrance: TEXT.door };
   const OFFER = ["star", "taxi", "pickup"].concat(mode === "pickup" ? [] : ["dropoff"]);
   const asked = new Set(), shown = new Map();
   let stimerSpots;
   const spotName = s => (lang === "en" && s.name_en) || s.name || s.name_en || "";
   const spotNote = s => (lang === "en" && s.note_en) || s.note || "";
   function useSpot(s) {
+    setPlaced();
     const near = chosen ? chosen.main : $("addr").textContent;  // the building it belongs to
     const name = spotName(s), note = spotNote(s);
     chosen = { lat: s.lat, lon: s.lon, main: `${ICON[s.kind]} ${name || WHAT[s.kind]}`,
@@ -336,6 +352,7 @@
   // another); Enter takes the one the pin is on.
   let sseq = 0, stimer;
   function goTo(n, done) {
+    setPlaced();
     chosen = n;
     map.setView([n.lat, n.lon], 18, { animate: false });
     map.fire("moveend");  // name it now, even if the map didn't need to move
@@ -388,6 +405,7 @@
   map.on("dragstart", () => { stopWatch(); best = 0; });  // they're placing the pin themselves now
   function go(lat, lon, acc) {
     if (!(acc < best)) return;  // only ever move to a better fix
+    setPlaced();
     best = acc || 1;
     if (ring) ring.remove();
     ring = acc > 30 ? L.circle([lat, lon], { radius: acc, color: "#2481cc", weight: 1, fillOpacity: .08,
@@ -430,6 +448,7 @@
   }
 
   async function send() {
+    if (!placed) return;
     await naming;  // don't send a spot with the previous spot's name
     const c = map.getCenter();
     const pick = { lat: +c.lat.toFixed(6), lon: +c.lng.toFixed(6), label: label.slice(0, 80) };
@@ -454,10 +473,10 @@
   }
   if (inTelegram) {
     tg.MainButton.setText(TEXT.confirm);
-    tg.MainButton.show();
+    if (placed) tg.MainButton.show();
     tg.MainButton.onClick(send);
   } else {
-    $("confirm").style.display = "block";
+    if (placed) $("confirm").style.display = "block";
     $("confirm").addEventListener("click", send);
   }
 })();
