@@ -328,6 +328,7 @@
   // A pickup located by the phone starts at the nearest place a taxi can pick up from: a ⭐ 🚕 🚖 spot within
   // SNAP_M, or else the nearest main door within DOOR_M (a phone inside a building puts you in the middle of it).
   // Only for a good fix, and not once the rider has moved the map or searched; "Back to where I am" undoes it.
+  // Only when the map opens: tapping 📍 means "where I am", so that puts the pin on the phone's own position.
   const SNAP_M = 80, DOOR_M = 30, SNAP_ACC_M = 50;
   let snapFrom = null;  // { at, until }: where the phone says they are, while a snap is still wanted
   function trySnap() {
@@ -437,7 +438,7 @@
   // My location: Telegram's location access if available, else the browser's. A phone may give only a rough
   // position ("Precise Location" off, or no GPS fix yet) that can be kilometres out: show how far out it may be
   // as a circle, say so, and keep taking better fixes for a few seconds, until the user moves the map.
-  let ring = null, here = null, watch = null, best = Infinity;
+  let ring = null, here = null, watch = null, best = Infinity, snapOk = false;
   const ROUGH_M = 150;
   const stopWatch = () => { if (watch !== null) navigator.geolocation.clearWatch(watch); watch = null; };
   map.on("dragstart", () => { stopWatch(); best = 0; });  // they're placing the pin themselves now
@@ -456,10 +457,11 @@
                                                     html: '<div class="here"></div>' }),
                                   keyboard: false, interactive: false }).addTo(map);
     hideMoved();
-    snapFrom = mode === "pickup" && acc <= SNAP_ACC_M ? { at: L.latLng(lat, lon), until: Date.now() + 15000 } : null;
+    snapFrom = snapOk && mode === "pickup" && acc <= SNAP_ACC_M ? { at: L.latLng(lat, lon), until: Date.now() + 15000 } : null;
     map.setView([lat, lon], acc > 1000 ? 15 : acc > ROUGH_M ? 17 : 18);
   }
-  $("locate").addEventListener("click", () => {
+  $("locate").addEventListener("click", e => {
+    snapOk = !e.isTrusted;  // the page locating them as it opens, not a tap on 📍
     $("status").textContent = TEXT.finding;
     stopWatch(); best = Infinity;
     const test = (P.get("here") || "").split(",").map(Number);
