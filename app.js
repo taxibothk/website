@@ -1,4 +1,4 @@
-// RideBot HK website: language switch, fare tables, place search and the fare estimator.
+// TaxiBot HK website: language switch, fare tables, place search and the fare estimator.
 // The fare maths mirrors ridebot/core/fares.py; the data comes from it via data.js.
 (() => {
   "use strict";

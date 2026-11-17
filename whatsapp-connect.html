@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Connect WhatsApp</title>
+<style>
+  :root { --bg: #fff; --ink: #1a1a1a; --dim: #666; --line: #ddd; --accent: #f5c400; --ok: #1a7f37; --bad: #c62828; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #141414; --ink: #eee; --dim: #aaa; --line: #333; } }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 18px/1.5 system-ui, sans-serif; }
+  main { max-width: 560px; margin: 0 auto; padding: 24px 16px; }
+  h1 { font-size: 26px; margin: 0 0 8px; }
+  p, li { color: var(--dim); }
+  button { width: 100%; font: inherit; font-weight: 700; padding: 16px; border: 0; border-radius: 12px;
+           background: #25d366; color: #000; cursor: pointer; margin: 16px 0; }
+  button:disabled { opacity: .4; cursor: default; }
+  pre { background: rgba(127,127,127,.12); padding: 14px; border-radius: 10px; white-space: pre-wrap;
+        word-break: break-all; font-size: 15px; user-select: all; }
+  .ok { color: var(--ok); font-weight: 700; } .bad { color: var(--bad); font-weight: 700; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Connect the WhatsApp Business app number</h1>
+  <p>For TaxiBot staff only. Have the phone with the WhatsApp Business app (latest version) next to you:
+    near the end you scan a QR code with it, and the app asks you to confirm.</p>
+  <ol>
+    <li>Log in with the Facebook account that manages the TaxiBot business.</li>
+    <li>Choose <b>Connect your existing WhatsApp Business app</b> and pick the business portfolio TaxiBot already uses.</li>
+    <li>Enter the business number, then scan the QR code / accept the prompt in the app and choose to share chat history.</li>
+  </ol>
+  <button id="go" disabled>Connect WhatsApp Business app</button>
+  <div id="out"></div>
+</main>
+<script>
+  // The App ID and Facebook Login for Business configuration ID come from the address:
+  //   whatsapp-connect.html?app=<APP_ID>&config=<CONFIG_ID>
+  const q = new URLSearchParams(location.search);
+  const APP = q.get("app") || "", CONFIG = q.get("config") || "";
+  const out = document.getElementById("out"), go = document.getElementById("go");
+  const show = (html) => { out.innerHTML = html; };
+  const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  let result = null;
+
+  if (!/^\d+$/.test(APP) || !/^\d+$/.test(CONFIG)) {
+    show('<p class="bad">This link is missing ?app=…&config=… (the Meta App ID and the configuration ID).</p>');
+  } else {
+    window.fbAsyncInit = () => {
+      FB.init({ appId: APP, autoLogAppEvents: true, xfbml: false, version: "v23.0" });
+      go.disabled = false;
+    };
+    const sdk = document.createElement("script");
+    sdk.src = "https://connect.facebook.net/en_US/sdk.js"; sdk.async = true; sdk.defer = true; sdk.crossOrigin = "anonymous";
+    document.head.appendChild(sdk);
+  }
+
+  // Embedded Signup reports the new account and number by postMessage
+  window.addEventListener("message", (e) => {
+    if (!/(^|\.)facebook\.com$/.test(new URL(e.origin).hostname)) return;
+    let d; try { d = JSON.parse(e.data); } catch { return; }
+    if (d.type !== "WA_EMBEDDED_SIGNUP") return;
+    if (/^FINISH/.test(d.event) && d.data) {
+      result = d.data;
+      const { waba_id, phone_number_id } = d.data;
+      show(`<p class="ok">Connected (${esc(d.event)}).</p>
+        <p>On the server, in ~/ridebot, run:</p>
+        <pre>.venv/bin/python -m ridebot.wa_connect ${esc(waba_id)} ${esc(phone_number_id)} --save
+systemctl --user restart ridebot</pre>
+        <p>Run it within 24 hours so the app's contacts and chat history can be synced.</p>`);
+    } else if (d.event === "CANCEL") {
+      show(`<p class="bad">Stopped at: ${esc(d.data?.current_step || "?")}${d.data?.error_message ? " — " + esc(d.data.error_message) : ""}</p>`);
+    } else if (d.event === "ERROR") {
+      show(`<p class="bad">Error: ${esc(d.data?.error_message || "unknown")}</p>`);
+    }
+  });
+
+  go.addEventListener("click", () => {
+    FB.login((r) => {
+      if (!result && !(r && r.authResponse)) show('<p class="bad">Facebook login was closed before finishing.</p>');
+      // r.authResponse.code is not needed: the bot keeps using its own system-user token.
+    }, {
+      config_id: CONFIG, response_type: "code", override_default_response_type: true,
+      extras: { setup: {}, featureType: "whatsapp_business_app_onboarding", sessionInfoVersion: "3" },
+    });
+  });
+</script>
+</body>
+</html>
